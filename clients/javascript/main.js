@@ -148,6 +148,9 @@ function main(host, port, botName, aiName, webgameSpec) {
 
         botIdMap[bot.botId] = bots[index];
       });
+      if (ai.init) {
+        ai.init(data, bots);
+      }
     }
 
     function handleEnd(data) {
