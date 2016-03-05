@@ -54,6 +54,11 @@ var botNames = [
 module.exports = function Ai() {
   var game = {};
   const origo = {x: 0, y: 0};
+  const AIParams = {
+    probabilityForRandomTiling: process.env.PROB_RAND || 0.2,
+    avoidRadaringBorders: process.env.AVOID_RAD_BORD || false,
+    probabilityToAvoidTeam: process.env.PROB_AVOID_TEAM || 0.4
+  };
 
   /*
    * {
@@ -69,19 +74,41 @@ module.exports = function Ai() {
    */
 
   function resetRadarSweep() {
-    var tileRadius = Math.floor(game.config.fieldRadius / game.config.radar);
     game.tilesNotSwept = [];
-    var r = game.config.radar;
-    var center = {
-      x: randInt(-game.config.radar, game.config.radar),
-      y: randInt(-game.config.radar, game.config.radar)
-    };
-    for (var i = -tileRadius - 1; i <= tileRadius + 1; i++) for (var j = -tileRadius - 1; j <= tileRadius + 1; j++) {
-      var tileCenter = {
-          x: (r+1)*i-r*j + center.x,
-          y: r*i+(2*r+1)*j + center.y
+    var R = game.config.radar;
+    var F = game.config.fieldRadius;
+    var tileRadius = Math.floor(F / R);
+    // Always
+    var corners = [
+      {x: 0, y: -F + R},
+      {x: F - R, y: -F + R},
+      {x: F - R, y: 0},
+      {x: 0, y: F - R},
+      {x: -F + R, y: F - R},
+      {x: -F + R, y: 0}
+    ];
+    
+    var randomCorner = _.shuffle(corners)[0];
+    if (Math.random() < AIParams.probabilityForRandomTiling) {
+      // We can occasionally take random tilings also.
+      randomCorner = {
+        x: randInt(-R, R),
+        y: randInt(-R, R)
       };
-      if (distance(origo, tileCenter) < game.config.fieldRadius - (r - 1)) {
+    }
+    
+    for (var i = -tileRadius * 2 - 1; i <= tileRadius * 2 + 1; i++) for (var j = -tileRadius * 2 - 1; j <= tileRadius * 2 + 1; j++) {
+      var tileCenter = {
+          x: (R+1)*i-R*j + randomCorner.x,
+          y: R*i+(2*R+1)*j + randomCorner.y
+      };
+      var maxRadarR = F - (R - 1);
+      // F - (R - 1) means the whole radar fits to the field.
+      // This might cause some issues occasionally.
+      if (!AIParams.avoidRadaringBorders) {
+        maxRadarR = F - 1;
+      }
+      if (distance(origo, tileCenter) < F - (R - 1)) {
         game.tilesNotSwept.push(tileCenter);
       }
     }
@@ -230,9 +257,12 @@ module.exports = function Ai() {
       }
     });
     
+    var numAliveTeamMembers = bots.filter(function (bot) {
+      return bot.alive;
+    }).length;
     bots.forEach(function(bot) {
       var action = sweep;
-      if (Math.random() > 0.7) {
+      if (numAliveTeamMembers > 1 && Math.random() < AIParams.probabilityToAvoidTeam) {
         action = avoidTeam;
       }
       if (avoid[bot.botId]) {
@@ -260,6 +290,7 @@ module.exports = function Ai() {
         console.log("Bot did not respond in required time", event.data);
       }
     });
+    console.log(JSON.stringify(AIParams));
   }
 
   function randInt(min, max) {
