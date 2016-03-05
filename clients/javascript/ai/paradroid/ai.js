@@ -57,7 +57,9 @@ module.exports = function Ai() {
   const AIParams = {
     probabilityForRandomTiling: process.env.PROB_RAND || 0.2,
     avoidRadaringBorders: process.env.AVOID_RAD_BORD || false,
-    probabilityToAvoidTeam: process.env.PROB_AVOID_TEAM || 0.4
+    probabilityToAvoidTeam: process.env.PROB_AVOID_TEAM || 0.4,
+    persist: process.env.PERSIST || true,
+    randomFire: process.env.RANDOM_FIRE || false
   };
 
   /*
@@ -113,6 +115,10 @@ module.exports = function Ai() {
       }
     }
     game.tilesNotSwept = _.shuffle(game.tilesNotSwept);
+  }
+  
+  function persist(coord) {
+    game.tilesNotSwept.push(coord);
   }
   
   function getPositionToSweep() {
@@ -230,7 +236,9 @@ module.exports = function Ai() {
       avoidTeam = 'avoidTeam';
 
     var fireAllPos,
-      avoid = {};
+      avoid = {},
+      toPersist = {},
+      toFire = {};
     
     events.forEach(function(event) {
       switch(event.event) {
@@ -241,11 +249,17 @@ module.exports = function Ai() {
         break;
       case 'radarEcho':
         console.log('radarEcho: ' + JSON.stringify(event));
-        fireAllPos = event.pos;
+        toFire[JSON.stringify(event.pos)] = true;
+        if (AIParams.persist) {
+          toPersist[JSON.stringify(event.pos)] = true;
+        }
         break;
       case 'see':
         console.log('see: ' + JSON.stringify(event));
-        fireAllPos = event.pos;
+        toFire[JSON.stringify(event.pos)] = true;
+        if (AIParams.persist) {
+          toPersist[JSON.stringify(event.pos)] = true;
+        }
         break;
       case 'detected':
       case 'damaged':
@@ -256,12 +270,20 @@ module.exports = function Ai() {
         break;
       }
     });
+    Object.keys(toPersist).forEach(function(posStr) {
+      persist(JSON.parse(posStr));
+    });
     
     var numAliveTeamMembers = bots.filter(function (bot) {
       return bot.alive;
     }).length;
-    bots.forEach(function(bot) {
+    bots.filter(function (bot) {
+      return bot.alive;
+    }).forEach(function(bot) {
       var action = sweep;
+      if (Object.keys(toFire).length > 0) {
+        fireAllPos = JSON.parse(_.shuffle(Object.keys(toFire))[0]);
+      }
       if (numAliveTeamMembers > 1 && Math.random() < AIParams.probabilityToAvoidTeam) {
         action = avoidTeam;
       }
@@ -270,8 +292,19 @@ module.exports = function Ai() {
         bot.move(targetPos.x, targetPos.y);
         console.log("Avoid " + bot.botId + " at: " + JSON.stringify(targetPos));
       } else if (fireAllPos) {
-        bot.cannon(fireAllPos.x, fireAllPos.y);
-        console.log("Cannon " + bot.botId + " at: " + JSON.stringify(fireAllPos));
+        var firePos = fireAllPos;
+        if (AIParams.randomFire) {
+          if (Math.random() > 0.5) {
+            firePos.x = firePos.x + randInt(-1, 1);
+          } else {
+            firePos.y = firePos.y + randInt(-1, 1);
+          }
+          if (!isOnField(firePos)) {
+            firePos = fireAllPos;
+          }
+        }
+        bot.cannon(firePos.x, firePos.y);
+        console.log("Cannon " + bot.botId + " at: " + JSON.stringify(firePos));
       } else if (action == avoidTeam) {
         var targetPos = avoidTeamMembers(bot);
         if (targetPos) {
@@ -300,7 +333,7 @@ module.exports = function Ai() {
   }
 
   return {
-    // The AI must return these three attributes
+    teamName: 'Paradroid',
     botNames: botNames,
     makeDecisions: makeDecisions,
     init: init
