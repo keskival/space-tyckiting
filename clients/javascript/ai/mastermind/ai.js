@@ -109,6 +109,7 @@ module.exports = function Ai() {
   }
 
   return {
+    teamName: 'Mastermind',
     botNames: botNames,
     makeDecisions: makeDecisions
   };
