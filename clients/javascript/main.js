@@ -62,7 +62,7 @@ function main(host, port, botName, aiName, webgameSpec) {
     var botIdMap = {};
     var playerId = null;
     var config;
-    var botTeam = botName;
+    var botTeam = ai.teamName || botName;
 
     // Actions
     var actions = [];
