@@ -47,7 +47,6 @@ var botNames = [
  * - Genetic algorithms, Markov Decision Nets, Fuzzy Logic.
  * - Evasion. %
  * - Avoid team mates, formation. %
- *  * Vector location of a team mate: (name<own_name)/2 + distance
  * - Distance > radius*2 is safe, distance <= radius to avoid. Need to have range to scan the whole game area.
  */
 
