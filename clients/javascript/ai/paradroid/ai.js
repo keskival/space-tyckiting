@@ -79,7 +79,6 @@ module.exports = function Ai() {
     var R = game.config.radar;
     var F = game.config.fieldRadius;
     var tileRadius = Math.floor(F / R);
-    // Always
     var corners = [
       {x: 0, y: -F + R},
       {x: F - R, y: -F + R},
@@ -142,15 +141,6 @@ module.exports = function Ai() {
     resetRadarSweep();
   }
   
-  function dotProduct(a, b) {
-    return a.x*b.x+a.y*b.y;
-  }
-  
-  function delta(a, b) {
-    var tieBreaker = a.botId && b.botId && (a.botId > b.botId) * Math.random() || 0;
-    return {x: b.x - a.x + tieBreaker, y: b.y - a.y + tieBreaker};
-  }
-  
   function notSelf(me) {
     return function(bot) {
       return me.botId != bot.botId;
@@ -165,17 +155,6 @@ module.exports = function Ai() {
     return {
       x: a.x + b.x,
       y: a.y + b.y
-    };
-  }
-  
-  function length(v) {
-    return Math.sqrt(v.x*v.x+v.y*v.y);
-  }  
-  function normalize(v) {
-    var scale = length(v);
-    return {
-      x: v.x / scale,
-      y: v.y / scale
     };
   }
   
