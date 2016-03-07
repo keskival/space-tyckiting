@@ -1,5 +1,7 @@
 # Space Tyckiting
 
+This is a Javascript bot for the competition. Feel free to test your bots against it, and fork, modify and improve. It's just a quick hack, nothing too fancy, but in my opinion it plays a solid game.
+
 ![Space Tyckiting banner](space-tyckiting-banner.jpg)
 
 Welcome to **Futurice Space Tyckiting**!
