@@ -364,6 +364,9 @@ module.exports = function Ai() {
     } else {
       scanner = _.shuffle(bots)[0];
     }
+    if (Object.keys(toFire).length > 0) {
+      fireAllPos = JSON.parse(_.shuffle(Object.keys(toFire))[0]);
+    }
     bots.filter(function (bot) {
       return bot.alive;
     }).forEach(function(bot) {
@@ -374,9 +377,6 @@ module.exports = function Ai() {
         if (game.avoidMemory[bot.botId].duration <= 0) {
           game.avoidMemory[bot.botId] = undefined;
         }
-      }
-      if (Object.keys(toFire).length > 0) {
-        fireAllPos = JSON.parse(_.shuffle(Object.keys(toFire))[0]);
       }
       var teamMembersTooCloseList = teamMembersTooClose(bots, bot);
       if (teamMembersTooCloseList.length > 0) {
