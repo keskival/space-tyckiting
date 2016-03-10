@@ -494,7 +494,7 @@ module.exports = function Ai() {
       if (Object.keys(toFire).length > 0) {
         fireAllPos = JSON.parse(_.shuffle(Object.keys(toFire))[0]);
       }
-      if (avoid[bot.botId] && !fireAllPos) {
+      if (avoid[bot.botId] && !fireAllPos && (Math.random() < 0.5)) {
         var targetPos = getBestMove(bot, avoid[bot.botId]);
         bot.move(targetPos.x, targetPos.y);
         console.log("Avoid " + bot.botId + " at: " + JSON.stringify(targetPos));
