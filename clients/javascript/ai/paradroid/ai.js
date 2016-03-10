@@ -128,7 +128,7 @@ module.exports = function Ai() {
   function getTilesAround(pos) {
     var R = game.config.radar;
     var F = game.config.fieldRadius;
-    var result = [pos];
+    var result = [];
     var i, j;
     if (Math.random() < 0.5) {
       i = 0;
@@ -160,8 +160,11 @@ module.exports = function Ai() {
     if (numBots > 1) {
       game.tilesNotSwept.push(coord);
     } else {
+      game.tilesNotSwept.push(coord);
       var tilesAround = getTilesAround(coord);
-      Array.prototype.push(game.tilesNotSwept, tilesAround);
+      if (Math.random() < 0.2) {
+        Array.prototype.push(game.tilesNotSwept, tilesAround);
+      }
     }
   }
   
@@ -243,6 +246,19 @@ module.exports = function Ai() {
     return valuedPositions && add(me, valuedPositions[0].pos);
   }
 
+  function avoidMaxMove(me, avoidCoord, maxDist) {
+    var valuedPositions = _.cloneDeep(game.movementTemplate).filter(isMoveOnField(me))
+      .filter((pos) => distance(pos, origo) <= maxDist).map(function(pos) {
+      // Going through each possible position and minimizing the negative distance to the closest partner.
+      return {
+        value: -distance(add(me, pos), avoidCoord),
+        pos
+      };
+    });
+    valuedPositions = _.sortBy(_.shuffle(valuedPositions), 'value');
+    return valuedPositions && add(me, valuedPositions[0].pos);
+  }
+  
   function avoidDamage(me, avoidCoord) {
     var valuedPositions = _.cloneDeep(game.avoidanceTemplate).filter(isMoveOnField(me)).map(function(pos) {
       // Going through each possible position and minimizing the negative distance to the position to avoid.
@@ -387,15 +403,15 @@ module.exports = function Ai() {
         var posToSweep = getPositionToSweep();
         console.log("Sweeping " + bot.botId + " at: " + JSON.stringify(posToSweep));
         bot.radar(posToSweep.x, posToSweep.y);
-      } else if (avoid[bot.botId] && (!fireAllPos || Math.random() < 0.7)) {
+      } else if (avoid[bot.botId] && (!fireAllPos || Math.random() < 0.5)) {
         var targetPos = getBestMove(bot, avoid[bot.botId]);
         bot.move(targetPos.x, targetPos.y);
         console.log("Avoid " + bot.botId + " at: " + JSON.stringify(targetPos));
       } else if (fireAllPos) {
         var firePos = fireAllPos;
         if (AIParams.randomFire) {
-          if (Math.random() < 0.7) {
-            firePos = avoidMove(firePos, firePos);
+          if (Math.random() < 0.85) {
+            firePos = avoidMaxMove(firePos, firePos, 1);
           }
           if (!isOnField(firePos)) {
             firePos = fireAllPos;
@@ -403,7 +419,7 @@ module.exports = function Ai() {
         }
         bot.cannon(firePos.x, firePos.y);
         console.log("Cannon " + bot.botId + " at: " + JSON.stringify(firePos));
-      } else if (action == avoidTeam) {
+      } else if (action == avoidTeam && Math.random() < 0.5) {
         var targetPos = avoidTeamMembers(bot, teamMembersTooCloseList);
         if (targetPos) {
           console.log("Moving " + bot.botId + " to: " + JSON.stringify(targetPos));
@@ -471,7 +487,7 @@ module.exports = function Ai() {
       }
     });
     Object.keys(toPersist).forEach(function(posStr) {
-      persist(JSON.parse(posStr), numAliveTeamMembers);
+      persist(JSON.parse(posStr), 1);
     });
     bots.filter(function (bot) {
       return bot.alive;
@@ -494,8 +510,8 @@ module.exports = function Ai() {
       } else if (fireAllPos) {
         var firePos = fireAllPos;
         if (AIParams.randomFire) {
-          if (Math.random() < 0.7) {
-            firePos = avoidMove(firePos, firePos);
+          if (Math.random() < 0.5) {
+            firePos = avoidMaxMove(firePos, firePos, 1);
           }
           if (!isOnField(firePos)) {
             firePos = fireAllPos;
