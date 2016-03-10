@@ -128,7 +128,7 @@ module.exports = function Ai() {
         pos: add(coord, pos)
       };
     });
-    for (var i = 0; i < numBots; i++) {
+    for (var i = 0; i < numBots * 2; i++) {
       valuedPositions = _.sortBy(_.shuffle(valuedPositions), 'value');
       var persistTargetCoord = valuedPositions[0].pos;
       game.tilesNotSwept.push(persistTargetCoord);
@@ -345,10 +345,10 @@ module.exports = function Ai() {
       } else if (fireAllPos) {
         var firePos = fireAllPos;
         if (AIParams.randomFire) {
-          if (Math.random() > 0.5) {
-            firePos.x = firePos.x + randInt(-1, 1);
+          if (Math.random() < 0.8) {
+            firePos.x = firePos.x + randInt(-2, 2);
           } else {
-            firePos.y = firePos.y + randInt(-1, 1);
+            firePos.y = firePos.y + randInt(-2, 2);
           }
           if (!isOnField(firePos)) {
             firePos = fireAllPos;
