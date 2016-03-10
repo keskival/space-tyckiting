@@ -58,7 +58,9 @@ module.exports = function Ai() {
     avoidRadaringBorders: process.env.AVOID_RAD_BORD || false,
     probabilityToAvoidTeam: process.env.PROB_AVOID_TEAM || 0.4,
     persist: process.env.PERSIST || true,
-    randomFire: process.env.RANDOM_FIRE || false
+    randomFire: process.env.RANDOM_FIRE || false,
+    evade: process.env.EVADE || true,
+    noAvoidTeamAfterRound: process.env.EVADE_LIMIT || 30
   };
 
   /*
@@ -242,7 +244,9 @@ module.exports = function Ai() {
       case 'detected':
       case 'damaged':
         console.log('detected/damaged: ' + JSON.stringify(event));
-        avoid[event.botId] = true;
+        if (AIParams.evade) {
+          avoid[event.botId] = true;
+        }
         break;
       default:
         break;
@@ -262,7 +266,8 @@ module.exports = function Ai() {
       if (Object.keys(toFire).length > 0) {
         fireAllPos = JSON.parse(_.shuffle(Object.keys(toFire))[0]);
       }
-      if (numAliveTeamMembers > 1 && Math.random() < AIParams.probabilityToAvoidTeam) {
+      if (numAliveTeamMembers > 1 && Math.random() < AIParams.probabilityToAvoidTeam &&
+          roundId <= Number(AIParams.noAvoidTeamAfterRound)) {
         action = avoidTeam;
       }
       if (avoid[bot.botId]) {
