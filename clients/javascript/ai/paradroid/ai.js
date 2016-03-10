@@ -56,11 +56,14 @@ module.exports = function Ai() {
   const AIParams = {
     probabilityForRandomTiling: process.env.PROB_RAND || 0.2,
     avoidRadaringBorders: process.env.AVOID_RAD_BORD || false,
-    probabilityToAvoidTeam: process.env.PROB_AVOID_TEAM || 0.4,
+    probabilityToAvoidTeam: process.env.PROB_AVOID_TEAM || 0.1,
     persist: process.env.PERSIST || true,
-    randomFire: process.env.RANDOM_FIRE || false,
+    randomFire: process.env.RANDOM_FIRE || true,
     evade: process.env.EVADE || true,
-    noAvoidTeamAfterRound: process.env.EVADE_LIMIT || 30
+    noAvoidTeamAfterRound: process.env.EVADE_LIMIT || 30,
+    avoidProb: process.env.AVOID_PROB || 1.0,
+    persistScanDist: process.env.PERSIST_DIST || 4,
+    avoidanceDistance: process.env.AVOID_DIST || 4
   };
 
   /*
@@ -117,8 +120,19 @@ module.exports = function Ai() {
     game.tilesNotSwept = _.shuffle(game.tilesNotSwept);
   }
   
-  function persist(coord) {
-    game.tilesNotSwept.push(coord);
+  function persist(coord, numBots) {
+    var valuedPositions = _.cloneDeep(game.persistTemplate).filter(isMoveOnField(coord)).map(function(pos) {
+      // Going through each possible position and minimizing the negative distance to the persist center.
+      return {
+        value: -distance(add(coord, pos), coord),
+        pos: add(coord, pos)
+      };
+    });
+    for (var i = 0; i < numBots; i++) {
+      valuedPositions = _.sortBy(_.shuffle(valuedPositions), 'value');
+      var persistTargetCoord = valuedPositions[0].pos;
+      game.tilesNotSwept.push(persistTargetCoord);
+    }
   }
   
   function getPositionToSweep() {
@@ -133,11 +147,27 @@ module.exports = function Ai() {
     game = params;
     // Just working around the clumsiness of the framework... We want the HP and positions to update here automatically.
     game.you.bots = bots;
+    game.avoidMemory = {};
     game.movementTemplate = [];
     for (var i = -game.config.move; i <= game.config.move; i++) for (var j = -game.config.move; j <= game.config.move; j++) {
       var pos = {x: i, y: j};
       if (distance(pos, origo) <= game.config.move && distance(pos, origo) > 0) {
         game.movementTemplate.push(pos);
+      }
+    }
+    game.persistTemplate = [];
+    for (var i = -AIParams.persistScanDist; i <= AIParams.persistScanDist; i++) for (var j = -AIParams.persistScanDist; j <= AIParams.persistScanDist; j++) {
+      var pos = {x: i, y: j};
+      if (distance(pos, origo) <= AIParams.persistScanDist && distance(pos, origo) > 0) {
+        game.persistTemplate.push(pos);
+      }
+    }
+    game.avoidanceTemplate = [];
+    var avoidanceDistance = AIParams.avoidanceDistance;
+    for (var i = -avoidanceDistance; i <= avoidanceDistance; i++) for (var j = -avoidanceDistance; j <= avoidanceDistance; j++) {
+      var pos = {x: i, y: j};
+      if (distance(pos, origo) <= avoidanceDistance && distance(pos, origo) > 0) {
+        game.avoidanceTemplate.push(pos);
       }
     }
     resetRadarSweep();
@@ -181,6 +211,18 @@ module.exports = function Ai() {
     valuedPositions = _.sortBy(_.shuffle(valuedPositions), 'value');
     return valuedPositions && add(me, valuedPositions[0].pos);
   }
+
+  function avoidDamage(me, avoidCoord) {
+    var valuedPositions = _.cloneDeep(game.avoidanceTemplate).filter(isMoveOnField(me)).map(function(pos) {
+      // Going through each possible position and minimizing the negative distance to the position to avoid.
+      return {
+        value: -distance(add(me, pos), avoidCoord),
+        pos
+      };
+    });
+    valuedPositions = _.sortBy(_.shuffle(valuedPositions), 'value');
+    return valuedPositions && add(me, valuedPositions[0].pos);
+  }
   
   function avoidTeamMembers(me) {
     var otherBots = teamPositions(me);
@@ -208,6 +250,20 @@ module.exports = function Ai() {
   
   function betweenPlusMinus(value, radius) {
     return (value >= -radius) && (value <= radius)
+  }
+  
+  function getBestMove(from, to) {
+    var valuedPositions = _.cloneDeep(game.movementTemplate).filter(isMoveOnField(from))
+      .map(function(pos) {
+      // Going through each possible position and minimizing the distance to the target.
+      return {
+        value: distance(add(from, pos), to),
+        pos: add(from, pos)
+      };
+    });
+    valuedPositions = _.sortBy(_.shuffle(valuedPositions), 'value');
+    return valuedPositions && valuedPositions[0].pos;
+
   }
 
   function makeDecisions(roundId, events, bots, config) {
@@ -244,25 +300,37 @@ module.exports = function Ai() {
       case 'detected':
       case 'damaged':
         console.log('detected/damaged: ' + JSON.stringify(event));
-        if (AIParams.evade) {
-          avoid[event.botId] = true;
+        if (AIParams.evade && Math.random() < AIParams.avoidProb) {
+          var bot = _.find(bots, (bot) => bot.botId == event.botId);
+          var avoidTo = avoidDamage(bot, bot);
+          avoid[event.botId] = avoidTo;
+          game.avoidMemory[bot.botId] = {
+              pos: avoidTo,
+              duration: 2
+              };
         }
         break;
       default:
         break;
       }
     });
-    Object.keys(toPersist).forEach(function(posStr) {
-      persist(JSON.parse(posStr));
-    });
-    
     var numAliveTeamMembers = bots.filter(function (bot) {
       return bot.alive;
     }).length;
+    Object.keys(toPersist).forEach(function(posStr) {
+      persist(JSON.parse(posStr), numAliveTeamMembers);
+    });
     bots.filter(function (bot) {
       return bot.alive;
     }).forEach(function(bot) {
       var action = sweep;
+      if (game.avoidMemory[bot.botId]) {
+        avoid[bot.botId] = game.avoidMemory[bot.botId].pos;
+        game.avoidMemory[bot.botId].duration--;
+        if (game.avoidMemory[bot.botId].duration <= 0) {
+          game.avoidMemory[bot.botId] = undefined;
+        }
+      }
       if (Object.keys(toFire).length > 0) {
         fireAllPos = JSON.parse(_.shuffle(Object.keys(toFire))[0]);
       }
@@ -271,7 +339,7 @@ module.exports = function Ai() {
         action = avoidTeam;
       }
       if (avoid[bot.botId]) {
-        var targetPos = avoidMove(bot, bot);
+        var targetPos = getBestMove(bot, avoid[bot.botId]);
         bot.move(targetPos.x, targetPos.y);
         console.log("Avoid " + bot.botId + " at: " + JSON.stringify(targetPos));
       } else if (fireAllPos) {
