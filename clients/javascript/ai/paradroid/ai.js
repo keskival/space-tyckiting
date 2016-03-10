@@ -501,12 +501,7 @@ module.exports = function Ai() {
       } else if (fireAllPos) {
         var firePos = fireAllPos;
         if (AIParams.randomFire) {
-          if (Math.random() < 1.0) {
-            firePos.x = firePos.x + randInt(-1, 1);
-          } else {
-            firePos.y = firePos.y + randInt(-1, 1);
-          }
-          if (Math.random() < 0.4) {
+          if (Math.random() < 0.7) {
             firePos.x = firePos.x + randInt(-2, 2);
           } else {
             firePos.y = firePos.y + randInt(-2, 2);
