@@ -119,19 +119,49 @@ module.exports = function Ai() {
     }
     game.tilesNotSwept = _.shuffle(game.tilesNotSwept);
   }
+
+  function notAlreadyInQueue(tileCenter) {
+    var notInQueue = _.find(game.tilesNotSwept, (tile) => distance(tileCenter, tile) < game.config.radar);
+    return !notInQueue || notInQueue.length == 0;
+  }
+  
+  function getTilesAround(pos) {
+    var R = game.config.radar;
+    var F = game.config.fieldRadius;
+    var result = [pos];
+    var i, j;
+    if (Math.random() < 0.5) {
+      i = 0;
+      if (Math.random() < 0.5) {
+        j = -1;
+      } else {
+        j = 1;
+      }
+    } else {
+      j = 0;
+      if (Math.random() < 0.5) {
+        i = -1;
+      } else {
+        i = 1;
+      }
+    }
+    var tileCenter = {
+        x: (R+1)*i-R*j + pos.x,
+        y: R*i+(2*R+1)*j + pos.y
+    };
+    var maxRadarR = F - (R - 1);
+    if (distance(origo, tileCenter) <= F && notAlreadyInQueue(tileCenter)) {
+      result.push(tileCenter);
+    }
+    return result;
+  }
   
   function persist(coord, numBots) {
-    var valuedPositions = _.cloneDeep(game.persistTemplate).filter(isMoveOnField(coord)).map(function(pos) {
-      // Going through each possible position and minimizing the negative distance to the persist center.
-      return {
-        value: -distance(add(coord, pos), coord),
-        pos: add(coord, pos)
-      };
-    });
-    for (var i = 0; i < numBots * 2; i++) {
-      valuedPositions = _.sortBy(_.shuffle(valuedPositions), 'value');
-      var persistTargetCoord = valuedPositions[0].pos;
-      game.tilesNotSwept.push(persistTargetCoord);
+    if (numBots > 1) {
+      game.tilesNotSwept.push(coord);
+    } else {
+      var tilesAround = getTilesAround(coord);
+      Array.prototype.push(game.tilesNotSwept, tilesAround);
     }
   }
   
@@ -191,7 +221,8 @@ module.exports = function Ai() {
   }
   
   function isOnField(coordinate) {
-    return betweenPlusMinus(coordinate.x, game.config.fieldRadius) && betweenPlusMinus(coordinate.y, game.config.fieldRadius);
+    return betweenPlusMinus(coordinate.x, game.config.fieldRadius) && betweenPlusMinus(coordinate.y, game.config.fieldRadius)
+      && distance(origo, coordinate) <= game.config.fieldRadius;
   }
   
   function isMoveOnField(myPos) {
@@ -224,8 +255,7 @@ module.exports = function Ai() {
     return valuedPositions && add(me, valuedPositions[0].pos);
   }
   
-  function avoidTeamMembers(me) {
-    var otherBots = teamPositions(me);
+  function avoidTeamMembers(me, otherBots) {
     var avoidCoord;
     var minDist;
     otherBots.forEach(function(bot) {
@@ -263,10 +293,15 @@ module.exports = function Ai() {
     });
     valuedPositions = _.sortBy(_.shuffle(valuedPositions), 'value');
     return valuedPositions && valuedPositions[0].pos;
-
   }
 
-  function makeDecisions(roundId, events, bots, config) {
+  function teamMembersTooClose(bots, bot) {
+    var otherBots = bots.filter((other) => other.botId != bot.botId)
+      .filter((other) => distance(bot, other) <= 4);
+    return otherBots;
+  }
+  
+  function lotsOfPlayers(roundId, events, bots, config) {
     const
       sweep = 'sweep',
       avoidTeam = 'avoidTeam';
@@ -275,7 +310,10 @@ module.exports = function Ai() {
       avoid = {},
       toPersist = {},
       toFire = {};
-    
+    var numAliveTeamMembers = bots.filter(function (bot) {
+      return bot.alive;
+    }).length;
+
     events.forEach(function(event) {
       switch(event.event) {
       case 'hit':
@@ -307,16 +345,138 @@ module.exports = function Ai() {
           game.avoidMemory[bot.botId] = {
               pos: avoidTo,
               duration: 2
-              };
+          };
         }
         break;
       default:
         break;
       }
     });
-    var numAliveTeamMembers = bots.filter(function (bot) {
+    Object.keys(toPersist).forEach(function(posStr) {
+      persist(JSON.parse(posStr), numAliveTeamMembers);
+    });
+    var scanner;
+    var notUnderThreat = bots.filter(function (bot) {
       return bot.alive;
-    }).length;
+    }).filter((bot) => !avoid[bot.botId]);
+    if (notUnderThreat) {
+      scanner = notUnderThreat.pop();
+    } else {
+      scanner = _.shuffle(bots)[0];
+    }
+    bots.filter(function (bot) {
+      return bot.alive;
+    }).forEach(function(bot) {
+      var action = sweep;
+      if (game.avoidMemory[bot.botId]) {
+        avoid[bot.botId] = game.avoidMemory[bot.botId].pos;
+        game.avoidMemory[bot.botId].duration--;
+        if (game.avoidMemory[bot.botId].duration <= 0) {
+          game.avoidMemory[bot.botId] = undefined;
+        }
+      }
+      if (Object.keys(toFire).length > 0) {
+        fireAllPos = JSON.parse(_.shuffle(Object.keys(toFire))[0]);
+      }
+      var teamMembersTooCloseList = teamMembersTooClose(bots, bot);
+      if (teamMembersTooCloseList.length > 0) {
+        action = avoidTeam;
+      }
+      // The scanner always sweeps.
+      if (scanner && (bot.botId == scanner.botId)) {
+        var posToSweep = getPositionToSweep();
+        console.log("Sweeping " + bot.botId + " at: " + JSON.stringify(posToSweep));
+        bot.radar(posToSweep.x, posToSweep.y);
+      } else if (avoid[bot.botId] && (!fireAllPos || Math.random() < 0.7)) {
+        var targetPos = getBestMove(bot, avoid[bot.botId]);
+        bot.move(targetPos.x, targetPos.y);
+        console.log("Avoid " + bot.botId + " at: " + JSON.stringify(targetPos));
+      } else if (fireAllPos) {
+        var firePos = fireAllPos;
+        if (AIParams.randomFire) {
+          if (Math.random() < 1.0) {
+            firePos.x = firePos.x + randInt(-1, 1);
+          } else {
+            firePos.y = firePos.y + randInt(-1, 1);
+          }
+          if (Math.random() < 0.4) {
+            firePos.x = firePos.x + randInt(-2, 2);
+          } else {
+            firePos.y = firePos.y + randInt(-2, 2);
+          }
+          if (!isOnField(firePos)) {
+            firePos = fireAllPos;
+          }
+        }
+        bot.cannon(firePos.x, firePos.y);
+        console.log("Cannon " + bot.botId + " at: " + JSON.stringify(firePos));
+      } else if (action == avoidTeam) {
+        var targetPos = avoidTeamMembers(bot, teamMembersTooCloseList);
+        if (targetPos) {
+          console.log("Moving " + bot.botId + " to: " + JSON.stringify(targetPos));
+          bot.move(targetPos.x, targetPos.y);
+        }
+      } else if (action == sweep) {
+        var posToSweep = getPositionToSweep();
+        console.log("Sweeping " + bot.botId + " at: " + JSON.stringify(posToSweep));
+        bot.radar(posToSweep.x, posToSweep.y);
+      }
+    });
+  }
+  
+  function twoPlayers(roundId, events, bots, config) {
+  }
+
+  function alonePlayer(roundId, events, bots, config) {
+    const
+      sweep = 'sweep',
+      avoidTeam = 'avoidTeam';
+
+    var fireAllPos,
+      avoid = {},
+      toPersist = {},
+      toFire = {},
+      first = true;
+    var numAliveTeamMembers = 1;
+
+    events.forEach(function(event) {
+      switch(event.event) {
+      case 'hit':
+        console.log('hit: ' + JSON.stringify(event));
+        // TODO: If we hit, fire all. If we were hit, escape.
+        // TODO: How do "move" events work? Do we get info of enemy movements?
+        break;
+      case 'radarEcho':
+        console.log('radarEcho: ' + JSON.stringify(event));
+        toFire[JSON.stringify(event.pos)] = true;
+        if (AIParams.persist) {
+          toPersist[JSON.stringify(event.pos)] = true;
+        }
+        break;
+      case 'see':
+        console.log('see: ' + JSON.stringify(event));
+        toFire[JSON.stringify(event.pos)] = true;
+        if (AIParams.persist) {
+          toPersist[JSON.stringify(event.pos)] = true;
+        }
+        break;
+      case 'detected':
+      case 'damaged':
+        console.log('detected/damaged: ' + JSON.stringify(event));
+        if (AIParams.evade && Math.random() < AIParams.avoidProb) {
+          var bot = _.find(bots, (bot) => bot.botId == event.botId);
+          var avoidTo = avoidDamage(bot, bot);
+          avoid[event.botId] = avoidTo;
+          game.avoidMemory[bot.botId] = {
+              pos: avoidTo,
+              duration: 2
+          };
+        }
+        break;
+      default:
+        break;
+      }
+    });
     Object.keys(toPersist).forEach(function(posStr) {
       persist(JSON.parse(posStr), numAliveTeamMembers);
     });
@@ -334,18 +494,19 @@ module.exports = function Ai() {
       if (Object.keys(toFire).length > 0) {
         fireAllPos = JSON.parse(_.shuffle(Object.keys(toFire))[0]);
       }
-      if (numAliveTeamMembers > 1 && Math.random() < AIParams.probabilityToAvoidTeam &&
-          roundId <= Number(AIParams.noAvoidTeamAfterRound)) {
-        action = avoidTeam;
-      }
-      if (avoid[bot.botId]) {
+      if (avoid[bot.botId] && !fireAllPos) {
         var targetPos = getBestMove(bot, avoid[bot.botId]);
         bot.move(targetPos.x, targetPos.y);
         console.log("Avoid " + bot.botId + " at: " + JSON.stringify(targetPos));
       } else if (fireAllPos) {
         var firePos = fireAllPos;
         if (AIParams.randomFire) {
-          if (Math.random() < 0.8) {
+          if (Math.random() < 1.0) {
+            firePos.x = firePos.x + randInt(-1, 1);
+          } else {
+            firePos.y = firePos.y + randInt(-1, 1);
+          }
+          if (Math.random() < 0.4) {
             firePos.x = firePos.x + randInt(-2, 2);
           } else {
             firePos.y = firePos.y + randInt(-2, 2);
@@ -356,19 +517,26 @@ module.exports = function Ai() {
         }
         bot.cannon(firePos.x, firePos.y);
         console.log("Cannon " + bot.botId + " at: " + JSON.stringify(firePos));
-      } else if (action == avoidTeam) {
-        var targetPos = avoidTeamMembers(bot);
-        if (targetPos) {
-          console.log("Moving " + bot.botId + " to: " + JSON.stringify(targetPos));
-          bot.move(targetPos.x, targetPos.y);
-        }
-      } else if (action == sweep) {
+      } else {
         var posToSweep = getPositionToSweep();
         console.log("Sweeping " + bot.botId + " at: " + JSON.stringify(posToSweep));
         bot.radar(posToSweep.x, posToSweep.y);
       }
     });
+  }
+  
+  function makeDecisions(roundId, events, bots, config) {
+    var numAliveTeamMembers = bots.filter(function (bot) {
+      return bot.alive;
+    }).length;
 
+    if (numAliveTeamMembers > 2) {
+      lotsOfPlayers(roundId, events, bots, config);
+    } else if (numAliveTeamMembers == 2) {
+      lotsOfPlayers(roundId, events, bots, config);
+    } else {
+      alonePlayer(roundId, events, bots, config);
+    }
     _.each(events, function(event) {
       if (event.event === "noaction") {
         console.log("Bot did not respond in required time", event.data);
